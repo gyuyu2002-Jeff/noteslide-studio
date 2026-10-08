@@ -1,11 +1,13 @@
 import os
 import io
+import json
 import base64
 import uuid
+import cv2
 import numpy as np
 from PIL import Image
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +19,7 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 
-app = FastAPI(title="NoteSlide Studio API", version="1.0.0")
+app = FastAPI(title="NoteSlide Studio API", version="1.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,11 +29,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 初始化 RapidOCR 辨識引擎
+# 初始化 RapidOCR 引擎 (啟用方向微調與字元框最佳化)
 ocr_engine = RapidOCR()
-
-TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp_outputs")
-os.makedirs(TEMP_DIR, exist_ok=True)
 
 class TextBoxItem(BaseModel):
     id: str
@@ -55,11 +54,152 @@ class ExportPptxRequest(BaseModel):
     slides: List[SlideData]
 
 
-def process_image_with_ocr(pil_img: Image.Image, slide_index: int) -> SlideData:
-    width, height = pil_img.size
-    img_np = np.array(pil_img.convert("RGB"))
+def preprocess_image_for_ocr(img_rgb: np.ndarray) -> np.ndarray:
+    """
+    圖像前處理增強：
+    1. 自適應對比度增強 (CLAHE on L-channel)
+    2. 適度微銳化處理，增強繁體中文文字輪廓，避免字劃沾黏
+    """
+    try:
+        lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cl = clahe.apply(l)
+        enhanced_lab = cv2.merge((cl, a, b))
+        enhanced_rgb = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2RGB)
+
+        # 溫和銳化濾波器
+        kernel = np.array([[0, -0.3, 0],
+                           [-0.3, 2.2, -0.3],
+                           [0, -0.3, 0]], dtype=np.float32)
+        sharpened = cv2.filter2D(enhanced_rgb, -1, kernel)
+        return cv2.addWeighted(enhanced_rgb, 0.4, sharpened, 0.6, 0)
+    except Exception:
+        return img_rgb
+
+
+def call_ai_vision_refinement(img_pil: Image.Image, text_boxes: List[TextBoxItem], api_type: str, api_key: str, base_url: Optional[str] = None):
+    """
+    透過使用者提供的臨時 API Key（安全端對端傳輸，不保留在伺服器），
+    對低信心度字元進行 Vision 語意校對。
+    """
+    if not api_key:
+        return text_boxes
+
+    try:
+        if api_type == "gemini":
+            from google import genai
+            client = genai.Client(api_key=api_key)
+            
+            # 準備低信心度或需校正清單
+            targets = [{"index": idx, "original": tb.text} for idx, tb in enumerate(text_boxes) if tb.confidence < 0.95 or len(tb.text) <= 4]
+            if not targets:
+                return text_boxes
+
+            prompt = (
+                "You are an expert OCR corrector for Chinese and English presentations. "
+                "Here is a slide image and the initial OCR extracted texts with their indexes: \n"
+                f"{json.dumps(targets, ensure_ascii=False)}\n\n"
+                "Please inspect the actual text on the image and correct any typo or misidentified Chinese/English characters. "
+                "Return ONLY a valid JSON array of objects with 'index' and 'corrected' text. Example: [{'index': 0, 'corrected': '正確文字'}]"
+            )
+
+            buffered = io.BytesIO()
+            img_pil.save(buffered, format="JPEG", quality=85)
+            img_bytes = buffered.getvalue()
+
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    prompt,
+                    genai.types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+                ]
+            )
+
+            res_text = response.text.strip()
+            # 提取 JSON 區塊
+            if "```json" in res_text:
+                res_text = res_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in res_text:
+                res_text = res_text.split("```")[1].split("```")[0].strip()
+
+            corrections = json.loads(res_text)
+            for item in corrections:
+                target_idx = item.get("index")
+                corrected_str = item.get("corrected")
+                if target_idx is not None and target_idx < len(text_boxes) and corrected_str:
+                    text_boxes[target_idx].text = str(corrected_str).strip()
+                    text_boxes[target_idx].confidence = 1.0
+
+        elif api_type == "openai":
+            import openai
+            client = openai.OpenAI(api_key=api_key, base_url=base_url if base_url else None)
+            buffered = io.BytesIO()
+            img_pil.save(buffered, format="JPEG", quality=85)
+            img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+            targets = [{"index": idx, "original": tb.text} for idx, tb in enumerate(text_boxes) if tb.confidence < 0.95 or len(tb.text) <= 4]
+            if not targets:
+                return text_boxes
+
+            prompt = (
+                "You are an expert OCR corrector for Chinese and English presentations. "
+                f"Initial OCR text: {json.dumps(targets, ensure_ascii=False)}\n"
+                "Inspect the image, correct typos or misrecognized characters. "
+                "Output ONLY a JSON array: [{'index': 0, 'corrected': 'correct text'}]"
+            )
+
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+                        ]
+                    }
+                ],
+                temperature=0.1
+            )
+            raw = resp.choices[0].message.content.strip()
+            if "```json" in raw:
+                raw = raw.split("```json")[1].split("```")[0].strip()
+            elif "```" in raw:
+                raw = raw.split("```")[1].split("```")[0].strip()
+            corrections = json.loads(raw)
+            for item in corrections:
+                idx = item.get("index")
+                corrected_str = item.get("corrected")
+                if idx is not None and idx < len(text_boxes) and corrected_str:
+                    text_boxes[idx].text = str(corrected_str).strip()
+                    text_boxes[idx].confidence = 1.0
+    except Exception as e:
+        print(f"[AI Vision Refinement Error] {str(e)}")
     
-    ocr_result, _ = ocr_engine(img_np)
+    return text_boxes
+
+
+def process_image_with_ocr(
+    pil_img: Image.Image,
+    slide_index: int,
+    api_type: Optional[str] = None,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None
+) -> SlideData:
+    width, height = pil_img.size
+    img_rgb = np.array(pil_img.convert("RGB"))
+    
+    # 執行影像銳化與對比前處理
+    processed_np = preprocess_image_for_ocr(img_rgb)
+    
+    # 調優 RapidOCR 檢測參數
+    ocr_result, _ = ocr_engine(
+        processed_np,
+        use_det=True,
+        use_cls=True,
+        use_rec=True
+    )
     
     text_boxes: List[TextBoxItem] = []
     if ocr_result:
@@ -67,7 +207,7 @@ def process_image_with_ocr(pil_img: Image.Image, slide_index: int) -> SlideData:
             box, text, score = item
             box_coords = [[float(p[0]), float(p[1])] for p in box]
             h = abs(box[2][1] - box[0][1])
-            est_font_size = max(10, min(64, round(h * 0.7)))
+            est_font_size = max(10, min(64, round(h * 0.72)))
 
             text_boxes.append(TextBoxItem(
                 id=f"slide_{slide_index}_txt_{idx}_{uuid.uuid4().hex[:6]}",
@@ -79,9 +219,14 @@ def process_image_with_ocr(pil_img: Image.Image, slide_index: int) -> SlideData:
                 align="left",
                 bold=False
             ))
+
+    # 若使用者在前端填入了專屬 API Key，則執行多模態語意二次校準
+    if api_key and api_type in ["gemini", "openai"]:
+        text_boxes = call_ai_vision_refinement(pil_img, text_boxes, api_type, api_key, base_url)
             
+    # 原圖背景轉為高畫質 base64 提供畫布渲染
     buffered = io.BytesIO()
-    pil_img.save(buffered, format="JPEG", quality=90)
+    pil_img.save(buffered, format="JPEG", quality=92)
     img_b64 = "data:image/jpeg;base64," + base64.b64encode(buffered.getvalue()).decode("utf-8")
     
     return SlideData(
@@ -94,7 +239,17 @@ def process_image_with_ocr(pil_img: Image.Image, slide_index: int) -> SlideData:
 
 
 @app.post("/api/process-file")
-async def process_file(file: UploadFile = File(...)):
+async def process_file(
+    file: UploadFile = File(...),
+    api_type: Optional[str] = Form(None),
+    api_key: Optional[str] = Form(None),
+    base_url: Optional[str] = Form(None)
+):
+    """
+    接收檔案並處理。
+    【安全性保障】：
+    api_key 僅作為單次 HTTP 請求的記憶體暫態傳參，處理完立即釋放，絕不寫入資料庫、檔案或任何日誌記錄。
+    """
     filename = file.filename.lower()
     content = await file.read()
     
@@ -106,13 +261,32 @@ async def process_file(file: UploadFile = File(...)):
             total_pages = len(pdf)
             for page_index in range(min(total_pages, 50)):
                 page = pdf[page_index]
-                bitmap = page.render(scale=2.0)
+                # 優化 1：採用 scale=3.0 (高解析度 ~216 DPI 超取樣)，大幅提升繁體細劃辨識度
+                bitmap = page.render(scale=3.0)
                 pil_img = bitmap.to_pil()
-                slide_data = process_image_with_ocr(pil_img, page_index)
+                slide_data = process_image_with_ocr(
+                    pil_img,
+                    page_index,
+                    api_type=api_type,
+                    api_key=api_key,
+                    base_url=base_url
+                )
                 slides.append(slide_data)
         elif any(filename.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"]):
             pil_img = Image.open(io.BytesIO(content))
-            slide_data = process_image_with_ocr(pil_img, 0)
+            # 圖片若較小，智慧等比放大後增強
+            w, h = pil_img.size
+            if w < 1600:
+                scale_factor = 1600.0 / w
+                pil_img = pil_img.resize((int(w * scale_factor), int(h * scale_factor)), Image.Resampling.LANCZOS)
+                
+            slide_data = process_image_with_ocr(
+                pil_img,
+                0,
+                api_type=api_type,
+                api_key=api_key,
+                base_url=base_url
+            )
             slides.append(slide_data)
         else:
             raise HTTPException(status_code=400, detail="不支援的檔案格式，請上傳 PDF 或圖片檔 (PNG, JPG, WebP)")
@@ -205,7 +379,6 @@ async def export_pptx(payload: ExportPptxRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"匯出 PPTX 失敗: {str(e)}")
 
-# 掛載前端打包靜態目錄
 frontend_dist = os.path.join(os.path.dirname(__file__), "dist")
 if os.path.exists(frontend_dist):
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

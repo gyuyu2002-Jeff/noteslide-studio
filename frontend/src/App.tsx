@@ -14,13 +14,20 @@ export function App() {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [progressText, setProgressText] = useState<string>('');
 
-  // 處理上傳並呼叫後端 RapidOCR 解析
-  const handleFileSelected = async (file: File) => {
+  // 處理上傳並呼叫後端 RapidOCR 解析 (可帶入使用者專屬 API 配置)
+  const handleFileSelected = async (file: File, apiConfig: { apiType: string; apiKey: string; baseUrl: string }) => {
     setIsLoading(true);
-    setProgressText(`正在載入 ${file.name} 並執行神經網路文字偵測...`);
+    setProgressText(`正在載入 ${file.name} 並執行 3x 超解析光柵化與神經網路文字偵測...`);
 
     const formData = new FormData();
     formData.append('file', file);
+    if (apiConfig.apiType && apiConfig.apiKey) {
+      formData.append('api_type', apiConfig.apiType);
+      formData.append('api_key', apiConfig.apiKey);
+      if (apiConfig.baseUrl) {
+        formData.append('base_url', apiConfig.baseUrl);
+      }
+    }
 
     try {
       const res = await fetch('/api/process-file', {
@@ -130,7 +137,7 @@ export function App() {
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
-                NoteSlide Studio <span className="text-[10px] bg-violet-500/20 text-violet-400 border border-violet-500/30 px-1.5 py-0.2 rounded font-mono">v1.0</span>
+                NoteSlide Studio <span className="text-[10px] bg-violet-500/20 text-violet-400 border border-violet-500/30 px-1.5 py-0.2 rounded font-mono">v1.1</span>
               </span>
               <span className="text-[10px] text-gray-400">NotebookLM to Editable PowerPoint</span>
             </div>
