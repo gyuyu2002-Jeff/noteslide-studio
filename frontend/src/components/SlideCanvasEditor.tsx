@@ -10,8 +10,7 @@ import {
   Palette,
   Eye,
   EyeOff,
-  Move,
-  Sparkles
+  Move
 } from 'lucide-react';
 
 interface SlideCanvasEditorProps {
@@ -27,7 +26,6 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
   const [scale, setScale] = useState<number>(1);
   const [showOriginalOverlay, setShowOriginalOverlay] = useState<boolean>(true);
-  const [maskOriginalText, setMaskOriginalText] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -242,26 +240,13 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
             </div>
           ) : (
             <span className="text-xs text-gray-400">
-              💡 點擊下方任一紫色框文字即可即時修改文案或拖曳移動
+              💡 點擊下方任一虛線框文字即可直接編輯或拖曳（匯出 PPTX 即可完全編輯）
             </span>
           )}
         </div>
 
         {/* 顯示原版覆蓋開關 */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setMaskOriginalText(!maskOriginalText)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-              maskOriginalText
-                ? 'bg-violet-600 text-white border-violet-500'
-                : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700'
-            }`}
-            title="遮蔽原圖文字，清晰展示新修改文字"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{maskOriginalText ? '已開啟文字遮蔽' : '遮蔽原圖底字'}</span>
-          </button>
-
           <button
             onClick={() => setShowOriginalOverlay(!showOriginalOverlay)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium border border-gray-700 transition"
@@ -294,7 +279,7 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
             />
           )}
 
-          {/* 覆蓋的文字方塊清單 */}
+          {/* 覆蓋的文字方塊清單 (比照 DeckEdit：平時只顯示純虛線框與 Hover 提示，徹底避免重疊字殘影) */}
           {slide.textBoxes.map((tb) => {
             const xs = tb.box.map((p) => p[0]);
             const ys = tb.box.map((p) => p[1]);
@@ -305,9 +290,6 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
 
             const isSelected = tb.id === selectedBoxId;
 
-            // 智慧對齊顏色：若底色遮蔽開啟或文字偏白，呈現對應視覺
-            const textColor = tb.color || (isSelected ? '#FFFFFF' : '#F3F4F6');
-
             return (
               <div
                 key={tb.id}
@@ -315,43 +297,42 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
                 style={{
                   left: `${minX * scale}px`,
                   top: `${minY * scale}px`,
-                  width: `${Math.max((maxX - minX) * scale, 48)}px`,
-                  minHeight: `${Math.max((maxY - minY) * scale, 24)}px`,
-                  fontSize: `${Math.max(14, tb.fontSize * scale)}px`,
-                  color: textColor,
+                  width: `${Math.max((maxX - minX) * scale, 32)}px`,
+                  minHeight: `${Math.max((maxY - minY) * scale, 18)}px`,
+                  fontSize: `${Math.max(13, tb.fontSize * scale)}px`,
+                  color: tb.color || '#FFFFFF',
                   textAlign: tb.align || 'left',
                   fontWeight: tb.bold ? 'bold' : 'normal',
                 }}
                 className={`absolute group cursor-move transition-all rounded ${
                   isSelected
-                    ? 'ring-2 ring-violet-400 bg-black/90 shadow-xl z-30'
-                    : maskOriginalText
-                    ? 'bg-black/95 border border-violet-500/50 hover:ring-1 hover:ring-violet-400 z-10'
-                    : 'bg-black/40 hover:bg-black/75 border border-dashed border-violet-400/40 hover:border-violet-400 z-10'
+                    ? 'ring-2 ring-violet-400 bg-gray-900/95 shadow-2xl z-30'
+                    : 'bg-transparent hover:bg-violet-500/10 border border-dashed border-violet-400/50 hover:border-violet-400 z-10'
                 }`}
               >
-                {/* 實體輸入或顯示文字 */}
+                {/* 實體輸入或顯示文字：未選中時保持透明 (只顯示原圖)，選中時浮出實體黑色背景輸入框 */}
                 {isSelected ? (
                   <textarea
                     autoFocus
                     value={tb.text}
                     onChange={(e) => updateSelectedBox({ text: e.target.value })}
-                    className="w-full h-full bg-transparent p-1.5 resize-none outline-none overflow-hidden font-sans leading-tight text-white"
+                    className="w-full h-full bg-transparent p-1.5 resize-none outline-none overflow-hidden font-sans leading-tight text-white focus:ring-0"
                     rows={Math.max(1, tb.text.split('\n').length)}
                   />
                 ) : (
-                  <div
-                    className="p-1.5 break-words font-sans whitespace-pre-wrap leading-tight text-shadow drop-shadow-md select-none"
-                  >
-                    {tb.text}
+                  <div className="w-full h-full relative">
+                    {/* Hover 浮現原文字預覽膠囊 */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-6 left-0 bg-violet-950/90 text-violet-200 text-[10px] px-1.5 py-0.5 rounded shadow whitespace-nowrap pointer-events-none z-20 border border-violet-500/30 font-mono">
+                      {tb.text}
+                    </div>
                   </div>
                 )}
 
                 {/* 選取時的控制把手 */}
                 {isSelected && (
-                  <div className="absolute -top-7 left-0 bg-violet-600 text-[10px] text-white px-2 py-0.5 rounded shadow-md pointer-events-none flex items-center gap-1 font-mono font-medium">
+                  <div className="absolute -top-7 left-0 bg-violet-600 text-[10px] text-white px-2 py-0.5 rounded shadow-md pointer-events-none flex items-center gap-1 font-mono font-medium whitespace-nowrap z-40">
                     <Move className="w-3 h-3" />
-                    可拖曳移動・可直接打字編輯
+                    點擊打字修改・可拖曳移動
                   </div>
                 )}
               </div>
