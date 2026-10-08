@@ -26,7 +26,93 @@ export async function renderPdfPageToDataUrl(pdfDoc: any, pageNum: number): Prom
   return { dataUrl, width: viewport.width, height: viewport.height };
 }
 
-// 瀏覽器端純本地 OCR 辨識 (支援繁體中文 chi_tra + 英文 eng)
+// 透過使用者填寫的 Gemini API 執行精準視覺文字定位 (直接提取座標與真實文字，媲美原版 DeckEdit)
+export async function runGeminiVisionOcr(
+  imgDataUrl: string,
+  width: number,
+  height: number,
+  slideIndex: number,
+  apiKey: string
+): Promise<SlideData> {
+  const base64Data = imgDataUrl.includes(',') ? imgDataUrl.split(',')[1] : imgDataUrl;
+
+  const prompt = `You are a professional presentation OCR layout extractor.
+Extract all visible text lines/elements from this slide.
+For each text element, provide:
+1. "text": The exact text content (in traditional Chinese or English).
+2. "box": 2D normalized bounding box [ymin, xmin, ymax, xmax] where values are integers between 0 and 1000.
+3. "color": Hex color code of the text (e.g. "#FFFFFF", "#FACC15").
+4. "fontSize": Estimated font size in points (e.g. 16, 24, 48).
+
+Return ONLY a JSON array of objects:
+[
+  {"text": "績優主管", "box": [120, 300, 250, 700], "color": "#FFFFFF", "fontSize": 48},
+  {"text": "經驗分享", "box": [270, 300, 380, 700], "color": "#FFFFFF", "fontSize": 48}
+]`;
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+          ]
+        }
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.1
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || 'Gemini API 調用失敗');
+  }
+
+  const result = await response.json();
+  const textRaw = result.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+  const parsed = JSON.parse(textRaw);
+
+  const textBoxes: TextBoxItem[] = parsed.map((item: any, idx: number) => {
+    // box [ymin, xmin, ymax, xmax] normalized 0~1000
+    const [ymin, xmin, ymax, xmax] = item.box || [0, 0, 100, 100];
+    const x0 = (xmin / 1000) * width;
+    const y0 = (ymin / 1000) * height;
+    const x1 = (xmax / 1000) * width;
+    const y1 = (ymax / 1000) * height;
+
+    return {
+      id: `gemini_slide_${slideIndex}_txt_${idx}_${Date.now()}`,
+      text: item.text || '',
+      box: [
+        [x0, y0],
+        [x1, y0],
+        [x1, y1],
+        [x0, y1]
+      ],
+      confidence: 0.99,
+      fontSize: item.fontSize || Math.max(16, Math.round((y1 - y0) * 0.7)),
+      color: item.color || '#FFFFFF',
+      align: 'left',
+      bold: true
+    };
+  });
+
+  return {
+    slideIndex,
+    width,
+    height,
+    bgImageBase64: imgDataUrl,
+    textBoxes
+  };
+}
+
+// 瀏覽器端純本地 OCR 辨識 (Tesseract.js chi_tra + eng)
 export async function runBrowserOcr(
   imgDataUrl: string,
   width: number,
@@ -42,7 +128,6 @@ export async function runBrowserOcr(
     }
   });
 
-  // Tesseract.js v7 必須顯式指定 { blocks: true, hocr: true } 才會返回 blocks/paragraphs/lines 坐標
   const ret: any = await worker.recognize(
     imgDataUrl,
     {},
@@ -57,7 +142,6 @@ export async function runBrowserOcr(
   const textBoxes: TextBoxItem[] = [];
   let boxIdx = 0;
 
-  // 1. 優先從 blocks -> paragraphs -> lines 解析
   if (ret.data?.blocks && ret.data.blocks.length > 0) {
     for (const b of ret.data.blocks) {
       if (!b.paragraphs) continue;
@@ -83,7 +167,7 @@ export async function runBrowserOcr(
           ];
 
           const h = Math.abs(y1 - y0);
-          const fontSize = Math.max(12, Math.min(54, Math.round(h * 0.75)));
+          const fontSize = Math.max(14, Math.min(54, Math.round(h * 0.75)));
 
           textBoxes.push({
             id: `browser_slide_${slideIndex}_txt_${boxIdx++}_${Date.now()}`,
@@ -91,37 +175,13 @@ export async function runBrowserOcr(
             box: boxCoords,
             confidence: Number(((line.confidence || 80) / 100).toFixed(2)),
             fontSize,
-            color: '#111827',
+            color: '#FFFFFF',
             align: 'left',
             bold: false
           });
         }
       }
     }
-  }
-
-  // 2. 備用語義提取 (若特殊字體未分出 lines，從 text 自動按行擬合)
-  if (textBoxes.length === 0 && ret.data?.text) {
-    const rawLines = ret.data.text.split('\n').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
-    const lineSpacing = height / (rawLines.length + 2);
-    rawLines.forEach((t: string, idx: number) => {
-      const y0 = lineSpacing * (idx + 1);
-      textBoxes.push({
-        id: `browser_slide_${slideIndex}_fallback_${idx}_${Date.now()}`,
-        text: t,
-        box: [
-          [width * 0.15, y0],
-          [width * 0.85, y0],
-          [width * 0.85, y0 + 40],
-          [width * 0.15, y0 + 40]
-        ],
-        confidence: 0.85,
-        fontSize: 24,
-        color: '#111827',
-        align: 'center',
-        bold: true
-      });
-    });
   }
 
   return {
@@ -174,7 +234,7 @@ export async function exportPptxInBrowser(slides: SlideData[], title: string = '
       const w = Math.max((maxX - minX) * scaleX, 0.8);
       const h = Math.max((maxY - minY) * scaleY, 0.3);
 
-      const cleanColor = (tb.color || '#111827').replace('#', '');
+      const cleanColor = (tb.color || '#FFFFFF').replace('#', '');
 
       slide.addText(tb.text, {
         x,

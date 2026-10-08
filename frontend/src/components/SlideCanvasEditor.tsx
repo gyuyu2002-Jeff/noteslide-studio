@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import type { SlideData, TextBoxItem } from '../types';
 import {
   Plus,
@@ -10,7 +10,8 @@ import {
   Palette,
   Eye,
   EyeOff,
-  Move
+  Move,
+  Sparkles
 } from 'lucide-react';
 
 interface SlideCanvasEditorProps {
@@ -26,6 +27,7 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
   const [scale, setScale] = useState<number>(1);
   const [showOriginalOverlay, setShowOriginalOverlay] = useState<boolean>(true);
+  const [maskOriginalText, setMaskOriginalText] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -33,7 +35,7 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
   useEffect(() => {
     const updateScale = () => {
       if (containerRef.current && slide.width > 0) {
-        const containerWidth = containerRef.current.clientWidth - 48; // padding
+        const containerWidth = containerRef.current.clientWidth - 48;
         const containerHeight = containerRef.current.clientHeight - 48;
         const scaleW = containerWidth / slide.width;
         const scaleH = containerHeight / slide.height;
@@ -76,12 +78,12 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
       box: [
         [slide.width * 0.3, slide.height * 0.4],
         [slide.width * 0.7, slide.height * 0.4],
-        [slide.width * 0.7, slide.height * 0.4 + 40],
-        [slide.width * 0.3, slide.height * 0.4 + 40],
+        [slide.width * 0.7, slide.height * 0.4 + 48],
+        [slide.width * 0.3, slide.height * 0.4 + 48],
       ],
       confidence: 1.0,
-      fontSize: 24,
-      color: '#111827',
+      fontSize: 28,
+      color: '#FFFFFF',
       align: 'left',
       bold: true,
     };
@@ -203,12 +205,27 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
                 </button>
               </div>
 
-              {/* 顏色選擇 */}
+              {/* 顏色快捷色標 */}
               <div className="flex items-center gap-1 bg-gray-800/80 px-2 py-1 rounded-md border border-gray-700">
-                <Palette className="w-3.5 h-3.5 text-gray-400" />
+                <button
+                  onClick={() => updateSelectedBox({ color: '#FFFFFF' })}
+                  className="w-4 h-4 rounded-full bg-white border border-gray-500 hover:scale-110 transition"
+                  title="純白"
+                />
+                <button
+                  onClick={() => updateSelectedBox({ color: '#FACC15' })}
+                  className="w-4 h-4 rounded-full bg-yellow-400 border border-gray-500 hover:scale-110 transition"
+                  title="重點黃"
+                />
+                <button
+                  onClick={() => updateSelectedBox({ color: '#111827' })}
+                  className="w-4 h-4 rounded-full bg-gray-900 border border-gray-500 hover:scale-110 transition"
+                  title="深黑"
+                />
+                <Palette className="w-3.5 h-3.5 text-gray-400 ml-1" />
                 <input
                   type="color"
-                  value={selectedBox.color || '#111827'}
+                  value={selectedBox.color || '#FFFFFF'}
                   onChange={(e) => updateSelectedBox({ color: e.target.value })}
                   className="w-5 h-5 rounded cursor-pointer bg-transparent border-0"
                 />
@@ -224,12 +241,27 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
               </button>
             </div>
           ) : (
-            <span className="text-xs text-gray-500 italic">點擊投影片上的任一文字框以進行調整或編輯文字</span>
+            <span className="text-xs text-gray-400">
+              💡 點擊下方任一紫色框文字即可即時修改文案或拖曳移動
+            </span>
           )}
         </div>
 
         {/* 顯示原版覆蓋開關 */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMaskOriginalText(!maskOriginalText)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+              maskOriginalText
+                ? 'bg-violet-600 text-white border-violet-500'
+                : 'bg-gray-800 text-gray-300 border-gray-700 hover:bg-gray-700'
+            }`}
+            title="遮蔽原圖文字，清晰展示新修改文字"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>{maskOriginalText ? '已開啟文字遮蔽' : '遮蔽原圖底字'}</span>
+          </button>
+
           <button
             onClick={() => setShowOriginalOverlay(!showOriginalOverlay)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium border border-gray-700 transition"
@@ -251,7 +283,7 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
             width: `${slide.width * scale}px`,
             height: `${slide.height * scale}px`,
           }}
-          className="relative bg-white shadow-2xl rounded-sm transition-all duration-75 border border-gray-700/50"
+          className="relative bg-black shadow-2xl rounded-sm transition-all duration-75 border border-gray-700/50"
         >
           {/* 原圖背景 */}
           {showOriginalOverlay && slide.bgImageBase64 && (
@@ -273,6 +305,9 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
 
             const isSelected = tb.id === selectedBoxId;
 
+            // 智慧對齊顏色：若底色遮蔽開啟或文字偏白，呈現對應視覺
+            const textColor = tb.color || (isSelected ? '#FFFFFF' : '#F3F4F6');
+
             return (
               <div
                 key={tb.id}
@@ -280,17 +315,19 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
                 style={{
                   left: `${minX * scale}px`,
                   top: `${minY * scale}px`,
-                  width: `${Math.max((maxX - minX) * scale, 40)}px`,
-                  minHeight: `${Math.max((maxY - minY) * scale, 20)}px`,
-                  fontSize: `${tb.fontSize * scale}px`,
-                  color: tb.color || '#111827',
+                  width: `${Math.max((maxX - minX) * scale, 48)}px`,
+                  minHeight: `${Math.max((maxY - minY) * scale, 24)}px`,
+                  fontSize: `${Math.max(14, tb.fontSize * scale)}px`,
+                  color: textColor,
                   textAlign: tb.align || 'left',
                   fontWeight: tb.bold ? 'bold' : 'normal',
                 }}
-                className={`absolute group cursor-move transition-colors rounded ${
+                className={`absolute group cursor-move transition-all rounded ${
                   isSelected
-                    ? 'ring-2 ring-violet-500 bg-white/95 shadow-lg z-20'
-                    : 'bg-white/80 hover:bg-white/95 border border-dashed border-violet-400/40 hover:border-violet-500 z-10'
+                    ? 'ring-2 ring-violet-400 bg-black/90 shadow-xl z-30'
+                    : maskOriginalText
+                    ? 'bg-black/95 border border-violet-500/50 hover:ring-1 hover:ring-violet-400 z-10'
+                    : 'bg-black/40 hover:bg-black/75 border border-dashed border-violet-400/40 hover:border-violet-400 z-10'
                 }`}
               >
                 {/* 實體輸入或顯示文字 */}
@@ -299,20 +336,22 @@ export const SlideCanvasEditor: React.FC<SlideCanvasEditorProps> = ({
                     autoFocus
                     value={tb.text}
                     onChange={(e) => updateSelectedBox({ text: e.target.value })}
-                    className="w-full h-full bg-transparent p-1 resize-none outline-none overflow-hidden font-sans"
+                    className="w-full h-full bg-transparent p-1.5 resize-none outline-none overflow-hidden font-sans leading-tight text-white"
                     rows={Math.max(1, tb.text.split('\n').length)}
                   />
                 ) : (
-                  <div className="p-1 break-words font-sans whitespace-pre-wrap leading-tight">
+                  <div
+                    className="p-1.5 break-words font-sans whitespace-pre-wrap leading-tight text-shadow drop-shadow-md select-none"
+                  >
                     {tb.text}
                   </div>
                 )}
 
                 {/* 選取時的控制把手 */}
                 {isSelected && (
-                  <div className="absolute -top-6 left-0 bg-violet-600 text-[10px] text-white px-1.5 py-0.5 rounded shadow pointer-events-none flex items-center gap-1 font-mono">
-                    <Move className="w-2.5 h-2.5" />
-                    可拖曳移動
+                  <div className="absolute -top-7 left-0 bg-violet-600 text-[10px] text-white px-2 py-0.5 rounded shadow-md pointer-events-none flex items-center gap-1 font-mono font-medium">
+                    <Move className="w-3 h-3" />
+                    可拖曳移動・可直接打字編輯
                   </div>
                 )}
               </div>

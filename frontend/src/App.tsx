@@ -5,7 +5,7 @@ import { SlideThumbnailList } from './components/SlideThumbnailList';
 import { SlideCanvasEditor } from './components/SlideCanvasEditor';
 import { Download, RefreshCw, Presentation, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { renderPdfPageToDataUrl, runBrowserOcr, exportPptxInBrowser } from './browserEngine';
+import { renderPdfPageToDataUrl, runBrowserOcr, runGeminiVisionOcr, exportPptxInBrowser } from './browserEngine';
 import * as pdfjsLib from 'pdfjs-dist';
 
 export function App() {
@@ -53,10 +53,12 @@ export function App() {
       processedViaBackend = false;
     }
 
+    // 若無後端 (純 GitHub Pages 靜態環境)
     if (!processedViaBackend) {
       try {
         const parsedSlides: SlideData[] = [];
         const isPdf = file.name.toLowerCase().endsWith('.pdf');
+        const hasGeminiKey = apiConfig.apiType === 'gemini' && !!apiConfig.apiKey;
 
         if (isPdf) {
           setProgressText('正在解析 PDF 頁面...');
@@ -65,15 +67,22 @@ export function App() {
           const numPages = Math.min(pdfDoc.numPages, 30);
 
           for (let i = 1; i <= numPages; i++) {
-            setProgressText(`正在渲染並辨識第 ${i} / ${numPages} 頁投影片...`);
+            setProgressText(`正在渲染第 ${i} / ${numPages} 頁投影片...`);
             const { dataUrl, width, height } = await renderPdfPageToDataUrl(pdfDoc, i);
-            const slide = await runBrowserOcr(dataUrl, width, height, i - 1, (pct) => {
-              setProgressText(`正在執行瀏覽器端 OCR：第 ${i} 頁 (${pct}%)`);
-            });
+
+            let slide: SlideData;
+            if (hasGeminiKey) {
+              setProgressText(`正在透過 Gemini 2.5 Flash 執行 AI 視覺座標提取：第 ${i} 頁...`);
+              slide = await runGeminiVisionOcr(dataUrl, width, height, i - 1, apiConfig.apiKey);
+            } else {
+              slide = await runBrowserOcr(dataUrl, width, height, i - 1, (pct) => {
+                setProgressText(`正在執行瀏覽器端 OCR：第 ${i} 頁 (${pct}%)`);
+              });
+            }
             parsedSlides.push(slide);
           }
         } else {
-          setProgressText('正在讀取圖片並執行瀏覽器端 OCR...');
+          setProgressText('正在讀取圖片...');
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result as string);
@@ -87,9 +96,15 @@ export function App() {
             img.src = dataUrl;
           });
 
-          const slide = await runBrowserOcr(dataUrl, img.width, img.height, 0, (pct) => {
-            setProgressText(`正在辨識圖片文字 (${pct}%)`);
-          });
+          let slide: SlideData;
+          if (hasGeminiKey) {
+            setProgressText('正在透過 Gemini 2.5 Flash 執行 AI 視覺座標精確識別...');
+            slide = await runGeminiVisionOcr(dataUrl, img.width, img.height, 0, apiConfig.apiKey);
+          } else {
+            slide = await runBrowserOcr(dataUrl, img.width, img.height, 0, (pct) => {
+              setProgressText(`正在辨識圖片文字 (${pct}%)`);
+            });
+          }
           parsedSlides.push(slide);
         }
 
@@ -185,7 +200,7 @@ export function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0a0d18] text-slate-100 selection:bg-indigo-500/30">
-      {/* 頂部導航列 (iOS 懸浮導航條風格 + 毛玻璃效果) */}
+      {/* 頂部導航列 */}
       <header className="h-16 border-b border-white/5 bg-[#0e1222]/85 px-6 flex items-center justify-between z-30 shrink-0 backdrop-blur-xl">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 via-indigo-600 to-violet-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/25 border border-white/10">
@@ -245,7 +260,7 @@ export function App() {
         </div>
       </header>
 
-      {/* 主工作區 (大氣底層漸層氛圍光) */}
+      {/* 主工作區 */}
       <main className="flex-1 flex overflow-hidden relative">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-indigo-600/10 blur-[130px] rounded-full pointer-events-none" />
 
