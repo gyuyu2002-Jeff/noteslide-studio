@@ -42,38 +42,87 @@ export async function runBrowserOcr(
     }
   });
 
-  const ret: any = await worker.recognize(imgDataUrl);
+  // Tesseract.js v7 必須顯式指定 { blocks: true, hocr: true } 才會返回 blocks/paragraphs/lines 坐標
+  const ret: any = await worker.recognize(
+    imgDataUrl,
+    {},
+    {
+      blocks: true,
+      hocr: true,
+      tsv: true
+    }
+  );
   await worker.terminate();
 
   const textBoxes: TextBoxItem[] = [];
+  let boxIdx = 0;
 
-  const lines = ret.data?.lines || [];
-  lines.forEach((line: any, idx: number) => {
-    const cleanText = (line.text || '').trim();
-    if (!cleanText) return;
+  // 1. 優先從 blocks -> paragraphs -> lines 解析
+  if (ret.data?.blocks && ret.data.blocks.length > 0) {
+    for (const b of ret.data.blocks) {
+      if (!b.paragraphs) continue;
+      for (const p of b.paragraphs) {
+        if (!p.lines) continue;
+        for (const line of p.lines) {
+          const cleanText = (line.text || '').trim();
+          if (!cleanText) continue;
 
-    const { x0, y0, x1, y1 } = line.bbox;
-    const boxCoords = [
-      [x0, y0],
-      [x1, y0],
-      [x1, y1],
-      [x0, y1]
-    ];
+          const bbox = line.bbox;
+          if (!bbox) continue;
 
-    const h = Math.abs(y1 - y0);
-    const fontSize = Math.max(12, Math.min(54, Math.round(h * 0.75)));
+          const x0 = bbox.x0;
+          const y0 = bbox.y0;
+          const x1 = bbox.x1;
+          const y1 = bbox.y1;
 
-    textBoxes.push({
-      id: `browser_slide_${slideIndex}_txt_${idx}_${Date.now()}`,
-      text: cleanText,
-      box: boxCoords,
-      confidence: Number(((line.confidence || 80) / 100).toFixed(2)),
-      fontSize,
-      color: '#111827',
-      align: 'left',
-      bold: false
+          const boxCoords = [
+            [x0, y0],
+            [x1, y0],
+            [x1, y1],
+            [x0, y1]
+          ];
+
+          const h = Math.abs(y1 - y0);
+          const fontSize = Math.max(12, Math.min(54, Math.round(h * 0.75)));
+
+          textBoxes.push({
+            id: `browser_slide_${slideIndex}_txt_${boxIdx++}_${Date.now()}`,
+            text: cleanText,
+            box: boxCoords,
+            confidence: Number(((line.confidence || 80) / 100).toFixed(2)),
+            fontSize,
+            color: '#111827',
+            align: 'left',
+            bold: false
+          });
+        }
+      }
+    }
+  }
+
+  // 2. 備用語義提取 (若特殊字體未分出 lines，從 text 自動按行擬合)
+  if (textBoxes.length === 0 && ret.data?.text) {
+    const rawLines = ret.data.text.split('\n').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+    const lineSpacing = height / (rawLines.length + 2);
+    rawLines.forEach((t: string, idx: number) => {
+      const y0 = lineSpacing * (idx + 1);
+      textBoxes.push({
+        id: `browser_slide_${slideIndex}_fallback_${idx}_${Date.now()}`,
+        text: t,
+        box: [
+          [width * 0.15, y0],
+          [width * 0.85, y0],
+          [width * 0.85, y0 + 40],
+          [width * 0.15, y0 + 40]
+        ],
+        confidence: 0.85,
+        fontSize: 24,
+        color: '#111827',
+        align: 'center',
+        bold: true
+      });
     });
-  });
+  }
 
   return {
     slideIndex,
