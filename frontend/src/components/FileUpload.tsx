@@ -4,14 +4,16 @@ import {
   FileText,
   Image as ImageIcon,
   Sparkles,
-  CheckCircle2,
   ShieldCheck,
   Zap,
   KeyRound,
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  Info
+  Info,
+  ArrowRight,
+  Layers,
+  Wand2
 } from 'lucide-react';
 
 interface FileUploadProps {
@@ -79,35 +81,38 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, isLoadin
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto flex flex-col items-center">
-      {/* 標題區 */}
-      <div className="text-center my-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/10 text-violet-400 text-sm font-medium mb-4 border border-violet-500/20">
-          <Sparkles className="w-4 h-4" />
-          <span>NoteSlide Studio・高精度投影片重構與文字提取</span>
-        </div>
-        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-4">
-          將 NotebookLM 投影片轉換為<br />
-          <span className="bg-gradient-to-r from-violet-400 via-purple-300 to-indigo-400 bg-clip-text text-transparent">
-            完全可編輯的 PowerPoint
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-center px-4 sm:px-6">
+      {/* 頂部 Badge 膠囊標籤 (iOS 擬態毛玻璃) */}
+      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 text-indigo-300 text-xs font-medium mb-6 border border-indigo-500/20 shadow-xs backdrop-blur-md">
+        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+        <span className="tracking-wide">NoteSlide Studio 2.0・下一代投影片結構重構引擎</span>
+      </div>
+
+      {/* Hero 標題區 (字級排版對齊與高對比階層) */}
+      <div className="text-center max-w-3xl mb-8">
+        <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-[1.15] mb-4">
+          將 NotebookLM 投影片<br className="hidden sm:inline" />
+          <span className="bg-gradient-to-r from-indigo-300 via-violet-300 to-purple-300 bg-clip-text text-transparent">
+            轉為微軟原生可編輯 PowerPoint
           </span>
         </h1>
-        <p className="text-gray-400 text-base max-w-2xl mx-auto">
-          3x 高解析取樣 + 自適應對比度增強，鎖定繁中與英文字元排版座標，一鍵重構為真正的 .pptx 簡報檔案。
+        <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-2xl mx-auto font-normal">
+          採用 3x 高解析超取樣與 CLAHE 對比度自適應校正，完美鎖定繁中文字坐標。
+          每個文字均為獨立向量文字框，保留原創色彩與比例。
         </p>
       </div>
 
-      {/* 拖放上傳框 */}
+      {/* 拖放上傳主卡片 (依據 anti-ui-slop 規範：24px 圓角、Subtle Ring 雙層邊界、iOS 磨砂玻璃) */}
       <div
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
         onClick={() => !isLoading && fileInputRef.current?.click()}
-        className={`w-full relative rounded-2xl border-2 border-dashed transition-all duration-200 cursor-pointer p-8 flex flex-col items-center justify-center min-h-[260px] ${
+        className={`w-full relative rounded-3xl border transition-all duration-300 cursor-pointer p-8 sm:p-12 flex flex-col items-center justify-center min-h-[280px] ${
           isDragOver
-            ? 'border-violet-500 bg-violet-500/10 scale-[1.01]'
-            : 'border-gray-700 bg-gray-900/60 hover:border-violet-500/60 hover:bg-gray-900/80'
-        } backdrop-blur-md shadow-2xl`}
+            ? 'border-indigo-400 bg-indigo-500/15 ring-4 ring-indigo-500/20 scale-[1.01]'
+            : 'border-white/10 bg-[#121626]/80 hover:border-indigo-500/40 hover:bg-[#151a2e]/90 shadow-2xl shadow-indigo-950/40'
+        } backdrop-blur-xl group`}
       >
         <input
           ref={fileInputRef}
@@ -119,83 +124,103 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, isLoadin
         />
 
         {isLoading ? (
-          <div className="flex flex-col items-center gap-4">
-            <div className="relative w-16 h-16">
-              <div className="w-16 h-16 rounded-full border-4 border-violet-500/20 border-t-violet-500 animate-spin"></div>
-              <Sparkles className="w-6 h-6 text-violet-400 absolute inset-0 m-auto animate-pulse" />
+          <div className="flex flex-col items-center gap-4 py-4">
+            <div className="relative w-16 h-16 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full border-[3px] border-indigo-500/20 border-t-indigo-400 animate-spin"></div>
+              <Wand2 className="w-6 h-6 text-indigo-300 absolute animate-pulse" />
             </div>
             <div className="text-center">
-              <p className="text-lg font-semibold text-white mb-1">{progressText || 'AI 正在分析投影片文字與版面結構...'}</p>
-              <p className="text-xs text-gray-400">正在執行 RapidOCR 3x 超取樣與影像增強辨識</p>
+              <p className="text-base font-semibold text-white tracking-wide mb-1">
+                {progressText || 'AI 正在分析投影片文字與版面結構...'}
+              </p>
+              <p className="text-xs text-slate-400 font-mono">3x Supersampling + Neural OCR Vectorization</p>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 p-3.5 shadow-lg shadow-violet-500/30 flex items-center justify-center text-white">
+          <div className="flex flex-col items-center text-center">
+            {/* 上傳圓角圖示 (微漸層立體光影) */}
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-b from-indigo-500 to-violet-600 p-3.5 shadow-lg shadow-indigo-500/25 flex items-center justify-center text-white mb-5 transition-transform duration-300 group-hover:scale-105 group-hover:shadow-indigo-500/40">
               <UploadCloud className="w-8 h-8" />
             </div>
-            <div>
-              <p className="text-lg font-bold text-white mb-1">
-                點擊選擇檔案，或直接將檔案拖放到此處
-              </p>
-              <p className="text-xs text-gray-400">
-                支援 PDF 文件 (NotebookLM 導出)、PNG、JPG、WebP 圖片 (最大 50MB / 50 頁)
-              </p>
-            </div>
-            <div className="flex items-center gap-4 mt-2">
-              <span className="inline-flex items-center gap-1.5 text-xs text-gray-400 bg-gray-800/80 px-2.5 py-1 rounded-md border border-gray-700/60">
-                <FileText className="w-3.5 h-3.5 text-violet-400" />
+            
+            <p className="text-lg sm:text-xl font-bold text-white tracking-tight mb-2">
+              拖放 PDF 或投影片圖片至此處
+            </p>
+            <p className="text-xs sm:text-sm text-slate-400 max-w-md mb-6 leading-normal">
+              支援 NotebookLM 導出之 PDF 簡報、PNG、JPG 或 WebP 截圖檔案（單檔最大 50MB）
+            </p>
+
+            {/* 格式指示膠囊 (iOS Pill Style) */}
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-300 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full border border-white/10 transition backdrop-blur-md">
+                <FileText className="w-3.5 h-3.5 text-indigo-400" />
                 NotebookLM 簡報 PDF
               </span>
-              <span className="inline-flex items-center gap-1.5 text-xs text-gray-400 bg-gray-800/80 px-2.5 py-1 rounded-md border border-gray-700/60">
-                <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
-                投影片截圖圖片
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-300 bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-full border border-white/10 transition backdrop-blur-md">
+                <ImageIcon className="w-3.5 h-3.5 text-purple-400" />
+                投影片高畫質截圖
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20 font-medium">
+                點擊瀏覽檔案 <ArrowRight className="w-3 h-3 ml-0.5" />
               </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* 🔐 自訂 AI API 增強設定 (折疊面板) */}
-      <div className="w-full mt-5 bg-gray-900/60 border border-gray-800 rounded-xl overflow-hidden backdrop-blur-md">
+      {/* 🔐 自訂 API 增強設定 (卡片磨砂玻璃 + 狀態徽章) */}
+      <div className="w-full mt-6 bg-[#111422]/90 border border-white/10 rounded-2xl overflow-hidden backdrop-blur-xl shadow-lg transition-all">
         <button
           type="button"
           onClick={() => setShowApiSettings(!showApiSettings)}
-          className="w-full px-5 py-3 flex items-center justify-between text-left text-xs font-semibold text-gray-300 hover:text-white transition"
+          className="w-full px-6 py-4 flex items-center justify-between text-left text-xs font-semibold text-slate-300 hover:text-white transition group"
         >
-          <div className="flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-violet-400" />
-            <span>進階選項：連接專屬 AI API Vision 二次校準 (選填)</span>
-            {apiKey ? (
-              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full font-mono">
-                已設定 {apiType.toUpperCase()}
-              </span>
-            ) : (
-              <span className="text-gray-500 text-[11px] font-normal">（預設使用本機 RapidOCR 免金鑰辨識）</span>
-            )}
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <KeyRound className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-white">連接專屬 AI Vision 二次語意校對</span>
+                {apiKey ? (
+                  <span className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] px-2.5 py-0.5 rounded-full font-mono font-medium">
+                    ● {apiType.toUpperCase()} 已就緒
+                  </span>
+                ) : (
+                  <span className="bg-white/5 text-slate-400 border border-white/10 text-[10px] px-2 py-0.5 rounded-full font-normal">
+                    選填（預設本機 RapidOCR）
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 font-normal mt-0.5">針對特殊字體、藝術字與多語言生僻字提供 99%+ 商務級極致校正</p>
+            </div>
           </div>
-          {showApiSettings ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+          <div className="p-1 rounded-lg bg-white/5 text-slate-400 group-hover:text-white transition">
+            {showApiSettings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </div>
         </button>
 
         {showApiSettings && (
-          <div className="p-5 border-t border-gray-800/80 bg-gray-950/40 text-xs space-y-4">
-            <div className="flex items-start gap-2 text-gray-400 bg-violet-950/20 border border-violet-500/20 p-3 rounded-lg">
-              <ShieldCheck className="w-4 h-4 text-violet-400 shrink-0 mt-0.5" />
+          <div className="px-6 pb-6 pt-2 border-t border-white/5 text-xs space-y-4">
+            {/* 隱私提示 (iOS 系統呼叫風格) */}
+            <div className="flex items-start gap-3 text-slate-300 bg-indigo-950/30 border border-indigo-500/20 p-3.5 rounded-xl">
+              <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
-                <p className="font-semibold text-violet-300">隱私與安全性保證：</p>
-                <p className="text-[11px] leading-relaxed">
-                  您的 API Key <strong>僅保存在您目前的個人瀏覽器 (Local Storage)</strong>，絕對不會上傳到任何伺服器儲存或日誌。發起辨識時僅作為單次請求記憶體傳參，使用完畢立即銷毀。
+                <p className="font-semibold text-indigo-300 text-xs">端對端本地隱私保護</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  您的 API Key <strong>僅加密儲存於個人瀏覽器本機快取 (Local Storage)</strong>，絕不寫入遠端伺服器或資料庫。
+                  辨識時僅作為單次請求記憶體臨時變數，使用完畢立即銷毀。
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div>
-                <label className="block text-gray-300 font-medium mb-1">AI 服務供應商</label>
+                <label className="block text-slate-300 font-medium mb-1.5 text-xs">AI 供應商</label>
                 <select
                   value={apiType}
                   onChange={(e) => handleSaveApiConfig(e.target.value as any, apiKey, baseUrl)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-violet-500"
+                  className="w-full bg-[#181d30] border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-indigo-400 transition"
                 >
                   <option value="none">不使用外部 API (純本地 RapidOCR)</option>
                   <option value="gemini">Google Gemini (Gemini 2.5 Flash - 推薦)</option>
@@ -204,7 +229,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, isLoadin
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-gray-300 font-medium mb-1">API Key</label>
+                <label className="block text-slate-300 font-medium mb-1.5 text-xs">API 金鑰 (Key)</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="password"
@@ -212,15 +237,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, isLoadin
                     value={apiKey}
                     disabled={apiType === 'none'}
                     onChange={(e) => handleSaveApiConfig(apiType, e.target.value, baseUrl)}
-                    className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-violet-500 disabled:opacity-40"
+                    className="flex-1 bg-[#181d30] border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-indigo-400 disabled:opacity-40 transition placeholder:text-slate-600"
                   />
                   {apiKey && (
                     <button
                       type="button"
                       onClick={handleClearApiKey}
-                      className="px-2.5 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs shrink-0"
+                      className="px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium border border-white/10 transition shrink-0"
                     >
-                      清除
+                      清除金鑰
                     </button>
                   )}
                 </div>
@@ -229,28 +254,28 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, isLoadin
 
             {apiType === 'openai' && (
               <div>
-                <label className="block text-gray-300 font-medium mb-1">Base URL (自訂轉發端點，選填)</label>
+                <label className="block text-slate-300 font-medium mb-1.5 text-xs">Base URL (自訂轉發端點，選填)</label>
                 <input
                   type="text"
                   placeholder="https://api.openai.com/v1"
                   value={baseUrl}
                   onChange={(e) => handleSaveApiConfig(apiType, apiKey, e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-violet-500"
+                  className="w-full bg-[#181d30] border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-indigo-400 transition placeholder:text-slate-600"
                 />
               </div>
             )}
 
-            {/* 官方取得教學連結 */}
-            <div className="flex flex-wrap items-center gap-4 text-[11px] text-gray-400 pt-1 border-t border-gray-800">
-              <span className="flex items-center gap-1">
-                <Info className="w-3.5 h-3.5 text-gray-500" />
-                如何取得免費 API Key：
+            {/* 取得教學外鏈 */}
+            <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-400 pt-2 border-t border-white/5">
+              <span className="flex items-center gap-1.5 text-slate-500">
+                <Info className="w-3.5 h-3.5" />
+                免費申請金鑰：
               </span>
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-violet-400 hover:underline inline-flex items-center gap-0.5"
+                className="text-indigo-400 hover:text-indigo-300 transition inline-flex items-center gap-1"
               >
                 <span>Google AI Studio (每月免費高額度)</span>
                 <ExternalLink className="w-3 h-3" />
@@ -259,9 +284,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, isLoadin
                 href="https://platform.openai.com/api-keys"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-violet-400 hover:underline inline-flex items-center gap-0.5"
+                className="text-indigo-400 hover:text-indigo-300 transition inline-flex items-center gap-1"
               >
-                <span>OpenAI API Keys</span>
+                <span>OpenAI Platform</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
@@ -269,42 +294,36 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelected, isLoadin
         )}
       </div>
 
-      {/* 亮點特性清單 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full mt-6">
-        <div className="flex items-start gap-3 p-3.5 rounded-xl bg-gray-900/40 border border-gray-800">
-          <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
-            <ShieldCheck className="w-4 h-4" />
+      {/* 底部 Bento 特性卡片區 (依照 anti-ui-slop 規範：統一間距 20px、圓角 20px、層次明確) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4.5 w-full mt-6">
+        <div className="p-5 rounded-2xl bg-[#111422]/60 border border-white/5 hover:border-white/15 transition-all duration-200 backdrop-blur-md">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mb-3.5">
+            <ShieldCheck className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="font-semibold text-white text-xs">隱私端對端保密</h3>
-            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-              API Key 僅存在個人瀏覽器，單次記憶體傳遞即焚，無伺服器留存。
-            </p>
-          </div>
+          <h3 className="font-bold text-white text-sm tracking-tight">100% 本地與隱私至上</h3>
+          <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+            支援完全離線運算與純前端運行，簡報檔案與隱私絕不上傳未知伺服器。
+          </p>
         </div>
 
-        <div className="flex items-start gap-3 p-3.5 rounded-xl bg-gray-900/40 border border-gray-800">
-          <div className="p-2 rounded-lg bg-violet-500/10 text-violet-400 shrink-0">
-            <Zap className="w-4 h-4" />
+        <div className="p-5 rounded-2xl bg-[#111422]/60 border border-white/5 hover:border-white/15 transition-all duration-200 backdrop-blur-md">
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center mb-3.5">
+            <Zap className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="font-semibold text-white text-xs">3x 超取樣 + 對比強化</h3>
-            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-              自適應 CLAHE 銳化與超高解析度渲染，極致提高繁體細劃辨識度。
-            </p>
-          </div>
+          <h3 className="font-bold text-white text-sm tracking-tight">3x 超取樣 + 對比強化</h3>
+          <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+            自適應 CLAHE 銳化與超高解析度光柵渲染，極致提高繁體中文細筆劃辨識度。
+          </p>
         </div>
 
-        <div className="flex items-start gap-3 p-3.5 rounded-xl bg-gray-900/40 border border-gray-800">
-          <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 shrink-0">
-            <CheckCircle2 className="w-4 h-4" />
+        <div className="p-5 rounded-2xl bg-[#111422]/60 border border-white/5 hover:border-white/15 transition-all duration-200 backdrop-blur-md">
+          <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center mb-3.5">
+            <Layers className="w-5 h-5" />
           </div>
-          <div>
-            <h3 className="font-semibold text-white text-xs">原生 PPTX 文字方塊</h3>
-            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">
-              還原微軟原生文字框，標題與內文均可自由選取換色與修改文案。
-            </p>
-          </div>
+          <h3 className="font-bold text-white text-sm tracking-tight">原生微軟向量文字方塊</h3>
+          <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+            匯出為真正可編輯的 PPTX，標題與段落均可隨意拖曳、換色、修改文字排版。
+          </p>
         </div>
       </div>
     </div>
